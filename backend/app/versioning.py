@@ -24,8 +24,13 @@ class VersioningManager:
         return doc
     
     def create_new_version(self, schema, diff, cause_batch_id, sample_docs, field_stats=None, source_id=None, enhanced_schema=None, db_compatibility=None):
-        latest = self.get_latest()
-        new_version = 1 if not latest else latest["version"] + 1
+        latest = self.get_latest(source_id=source_id)
+        if latest:
+            new_version = latest["version"] + 1
+        else:
+            # Check if there are any schemas for this source_id
+            existing = SCHEMA_COLLECTION.find_one({"source_id": source_id}, sort=[("version", -1)])
+            new_version = (existing["version"] + 1) if existing else 1
         
         metadata = {
             "version": new_version,
