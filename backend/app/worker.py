@@ -9,6 +9,7 @@ from .storage import StorageManager
 from .dlq import send_to_dlq
 from .cleaning import clean_documents
 from .schema_metadata import enhance_schema_with_metadata, generate_db_compatibility_metadata
+from .migration import generate_migration_plan
 from datetime import datetime
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -101,6 +102,18 @@ def process_job(raw_msg: bytes):
     )
     
     if decision.create_new_version:
+        # Generate migration plan
+        old_schema = latest_schema_meta.get("schema") if latest_schema_meta else None
+        migration_plan = generate_migration_plan(
+            old_schema,
+            candidate_schema,
+            diff,
+            field_stats
+        )
+        
+        if migration_plan.get("data_loss_risk"):
+            print(f"WARNING: Migration has data loss risk. Warnings: {len(migration_plan.get('warnings', []))}")
+        
         new_meta = version_manager.create_new_version(
             candidate_schema,
             diff,
@@ -114,6 +127,20 @@ def process_job(raw_msg: bytes):
         schema_for_load = new_meta["schema"]
         version = new_meta["version"]
         schema_id = new_meta.get("schema_id", f"schema_v{version}")
+        
+        # Store migration plan in schema metadata
+        new_meta["migration_plan"] = migration_plan
+        from pymongo import MongoClient
+        import os
+        MONGO_URL = os.getenv("MONGO_URL", "mongodb://mongo:27017")
+        client = MongoClient(MONGO_URL)
+        db = client["chrysalis"]
+        SCHEMA_COLLECTION = db["schema_registry"]
+        SCHEMA_COLLECTION.update_one(
+            {"schema_id": schema_id},
+            {"$set": {"migration_plan": migration_plan}}
+        )
+        
         print("Created new schema version:", version, "schema_id:", schema_id)
     else:
         schema_for_load = latest_schema_meta["schema"] if latest_schema_meta else candidate_schema

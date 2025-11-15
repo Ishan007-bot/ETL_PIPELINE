@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from .ingest import router as ingest_router
 from .upload import router as upload_router
 from .schema_api import router as schema_router
+from .migrate_api import router as migrate_router
 
 app = FastAPI(title="Chrysalis Dynamic ETL API", version="0.2")
 
@@ -13,6 +14,9 @@ app.include_router(upload_router, prefix="", tags=["upload"])
 
 # Schema endpoints
 app.include_router(schema_router, prefix="", tags=["schema"])
+
+# Migration endpoint
+app.include_router(migrate_router, prefix="", tags=["migration"])
 
 @app.get("/health")
 async def health():
