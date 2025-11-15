@@ -3,6 +3,7 @@ Data cleaning and canonicalization module.
 Handles field normalization, type coercion, date parsing, and data quality scoring.
 """
 import re
+import json
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 import dateparser
@@ -192,8 +193,10 @@ def remove_duplicates(documents: List[Dict[str, Any]], key_fields: Optional[List
             key_values = tuple(sorted([str(doc.get(k, '')) for k in key_fields]))
         else:
             # Create hash from entire document (excluding metadata)
+            # Use JSON string for hashing to handle nested dicts/lists
             doc_copy = {k: v for k, v in doc.items() if not k.startswith('_')}
-            key_values = tuple(sorted(doc_copy.items()))
+            # Sort keys and convert to JSON string for consistent hashing
+            key_values = json.dumps(doc_copy, sort_keys=True, default=str)
         
         if key_values not in seen:
             seen.add(key_values)

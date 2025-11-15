@@ -28,7 +28,16 @@ def detect_primary_key_candidates(fields: Dict[str, Any], sample_docs: List[Dict
         # Check uniqueness in sample
         if sample_docs:
             values = [doc.get(field_name) for doc in sample_docs if field_name in doc]
-            unique_values = set(values)
+            # Filter out unhashable types (dicts, lists) and convert to hashable
+            hashable_values = []
+            for v in values:
+                if isinstance(v, (dict, list)):
+                    # Convert to JSON string for hashing
+                    import json
+                    hashable_values.append(json.dumps(v, sort_keys=True, default=str))
+                else:
+                    hashable_values.append(v)
+            unique_values = set(hashable_values)
             uniqueness_ratio = len(unique_values) / len(values) if values else 0
             if uniqueness_ratio >= 0.95:  # 95% unique
                 score += 0.3
