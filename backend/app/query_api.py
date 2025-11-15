@@ -74,7 +74,7 @@ async def execute_query(
         if query_type == "count":
             result = execute_count_query(db_query, source_id=source_id, schema_version=schema_version)
         else:
-            result = execute_mongodb_query(db_query, source_id=source_id, schema_version=schema_version)
+            result = execute_mongodb_query(db_query, source_id=source_id, schema_version=schema_version, db_type=db_type)
         
         if async_mode:
             # Store result and return query_id

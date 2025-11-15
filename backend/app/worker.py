@@ -10,6 +10,7 @@ from .dlq import send_to_dlq
 from .cleaning import clean_documents
 from .schema_metadata import enhance_schema_with_metadata, generate_db_compatibility_metadata
 from .migration import generate_migration_plan
+from .multidb import MultiDBManager
 from datetime import datetime
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -19,6 +20,7 @@ r = redis.from_url(REDIS_URL, decode_responses=False)
 
 version_manager = VersioningManager()
 storage = StorageManager()
+multidb = MultiDBManager()
 
 BLPOP_TIMEOUT = 5  # seconds
 
@@ -165,7 +167,14 @@ def process_job(raw_msg: bytes):
             failed_docs.append({"doc": doc, "reason": str(e)})
     
     if success_docs:
+        # Store in MongoDB (primary)
         storage.insert_many(success_docs)
+        
+        # Store in other compatible databases if configured
+        compatible_dbs = db_compatibility.get("compatible_dbs", ["mongodb"])
+        if len(compatible_dbs) > 1:  # More than just MongoDB
+            print(f"Inserting to additional databases: {compatible_dbs}")
+            multidb.insert_to_databases(success_docs, source_id, compatible_dbs)
     
     if failed_docs:
         for d in failed_docs:

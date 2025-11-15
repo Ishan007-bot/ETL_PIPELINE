@@ -1,21 +1,25 @@
 """
-Query executor for running queries against MongoDB.
+Query executor for running queries against multiple databases.
 """
 from typing import Dict, Any, List, Optional
 from pymongo import MongoClient
 import os
 import json
+from .multidb import MultiDBManager
 
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://mongo:27017")
 client = MongoClient(MONGO_URL)
 db = client["chrysalis"]
 RAW_COLLECTION = db["raw_data"]
 
+multidb = MultiDBManager()
+
 def execute_mongodb_query(
     query: Dict[str, Any],
     source_id: Optional[str] = None,
     schema_version: Optional[int] = None,
-    limit: int = 100
+    limit: int = 100,
+    db_type: str = "mongodb"
 ) -> Dict[str, Any]:
     """
     Execute a MongoDB query against the raw_data collection.
@@ -56,8 +60,29 @@ def execute_mongodb_query(
     if query_obj:
         filter_query.update(query_obj)
     
-    # Execute query
+    # Execute query on appropriate database
     try:
+        if db_type != "mongodb":
+            # Use multi-DB manager for PostgreSQL/Neo4j
+            results = multidb.execute_query_multi_db(query_obj, source_id, db_type)
+            if results:
+                return {
+                    "results": results,
+                    "count": len(results),
+                    "query_executed": filter_query,
+                    "limit": limit,
+                    "db_type": db_type
+                }
+            else:
+                return {
+                    "results": [],
+                    "count": 0,
+                    "query_executed": filter_query,
+                    "limit": limit,
+                    "db_type": db_type
+                }
+        
+        # MongoDB execution (default)
         # Determine query type
         if "$aggregate" in str(query_obj) or "$group" in str(query_obj):
             # Aggregation pipeline
@@ -80,7 +105,8 @@ def execute_mongodb_query(
             "results": results,
             "count": count,
             "query_executed": filter_query,
-            "limit": limit
+            "limit": limit,
+            "db_type": "mongodb"
         }
     except Exception as e:
         raise ValueError(f"Query execution failed: {str(e)}")
