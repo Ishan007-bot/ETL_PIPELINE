@@ -1,0 +1,72 @@
+version: "3.8"
+
+services:
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: chrysalis_api
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    volumes:
+      - ..:/code
+    working_dir: /code/backend
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: chrysalis_worker
+    command: ["python", "app/worker.py"]
+    volumes:
+      - ..:/code
+    working_dir: /code/backend
+    depends_on:
+      - redis
+      - mongo
+
+  streamlit:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: chrysalis_streamlit
+    command: ["streamlit", "run", "demo/streamlit_app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    volumes:
+      - ..:/code
+    working_dir: /code
+    ports:
+      - "8501:8501"
+    depends_on:
+      - mongo
+
+volumes:
+  mongo_data:
+

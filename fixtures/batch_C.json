@@ -1,0 +1,8 @@
+{
+  "source": "fixture-C",
+  "documents": [
+    {"id": "p5", "name": "orange", "price": "8"},
+    {"id": "p6", "name": "grape", "price": "9"}
+  ]
+}
+
