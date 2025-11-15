@@ -7,6 +7,7 @@ from .schema_diff import compute_schema_diff, DriftDecision
 from .versioning import VersioningManager
 from .storage import StorageManager
 from .dlq import send_to_dlq
+from .cleaning import clean_documents
 from datetime import datetime
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -52,8 +53,22 @@ def process_job(raw_msg: bytes):
     
     print(f"[{datetime.utcnow().isoformat()}] Processing job {job_id}, {len(docs)} docs")
     
-    # sampling & preprocessing
-    sample = docs[:200]
+    # Data cleaning and canonicalization
+    print(f"Cleaning {len(docs)} documents...")
+    cleaning_result = clean_documents(
+        docs,
+        normalize_names=True,
+        remove_duplicates_flag=True,
+        key_fields=None  # Auto-detect duplicates
+    )
+    cleaned_docs = cleaning_result["cleaned_documents"]
+    quality_metrics = cleaning_result["quality_metrics"]
+    
+    print(f"Cleaned documents: {len(cleaned_docs)} (removed {quality_metrics.get('duplicates_removed', 0)} duplicates)")
+    print(f"Data quality score: {quality_metrics.get('quality_score', 0.0):.2f}")
+    
+    # sampling & preprocessing (use cleaned documents)
+    sample = cleaned_docs[:200]
     candidate_schema, field_stats = infer_schema_from_sample(sample, return_stats=True)
     
     latest_schema_meta = version_manager.get_latest()
@@ -92,13 +107,16 @@ def process_job(raw_msg: bytes):
     success_docs = []
     failed_docs = []
     
-    # validation + attach meta
-    for doc in docs:
+    # validation + attach meta (use cleaned documents)
+    for doc in cleaned_docs:
         try:
             # perform required-field checks using field_stats if available
             doc["_schema_version"] = version
+            doc["_schema_id"] = schema_id
             doc["_ingest_job_id"] = job_id
             doc["_ingest_ts"] = datetime.utcnow().isoformat()
+            doc["_source_id"] = source_id
+            doc["_quality_score"] = quality_metrics.get("quality_score", 0.0)
             success_docs.append(doc)
         except Exception as e:
             failed_docs.append({"doc": doc, "reason": str(e)})
