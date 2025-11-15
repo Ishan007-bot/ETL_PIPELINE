@@ -1,17 +1,21 @@
-import redis
+import sys
 import os
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import redis
 import orjson
 import time
-from .schema_infer import infer_schema_from_sample
-from .schema_diff import compute_schema_diff, DriftDecision
-from .versioning import VersioningManager
-from .storage import StorageManager
-from .dlq import send_to_dlq
-from .cleaning import clean_documents
-from .schema_metadata import enhance_schema_with_metadata, generate_db_compatibility_metadata
-from .migration import generate_migration_plan
-from .multidb import MultiDBManager
-from .logging import setup_logging, get_logger, log_schema_generation, log_schema_evolution, log_error
+from app.schema_infer import infer_schema_from_sample
+from app.schema_diff import compute_schema_diff, DriftDecision
+from app.versioning import VersioningManager
+from app.storage import StorageManager
+from app.dlq import send_to_dlq
+from app.cleaning import clean_documents
+from app.schema_metadata import enhance_schema_with_metadata, generate_db_compatibility_metadata
+from app.migration import generate_migration_plan
+from app.multidb import MultiDBManager
+from app.app_logging import setup_logging, get_logger, log_schema_generation, log_schema_evolution, log_error
 from datetime import datetime
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")

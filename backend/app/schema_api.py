@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from .versioning import VersioningManager
 from .security import validate_source_id
-from .logging import get_logger, log_error, log_security_event
+from .app_logging import get_logger, log_error, log_security_event
 from pymongo import MongoClient
 import os
 

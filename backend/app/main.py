@@ -6,7 +6,7 @@ from .upload import router as upload_router
 from .schema_api import router as schema_router
 from .migrate_api import router as migrate_router
 from .query_api import router as query_router
-from .logging import setup_logging, get_logger, log_error
+from .app_logging import setup_logging, get_logger, log_error
 import traceback
 
 # Setup logging

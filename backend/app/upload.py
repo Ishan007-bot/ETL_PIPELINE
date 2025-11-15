@@ -11,7 +11,7 @@ from datetime import datetime
 from .parsers import parse_file
 from .extractors import extract_all_fragments
 from .security import validate_file_upload, validate_source_id, secure_file_storage
-from .logging import get_logger, log_ingest, log_error, log_security_event
+from .app_logging import get_logger, log_ingest, log_error, log_security_event
 
 logger = get_logger("chrysalis.upload")
 

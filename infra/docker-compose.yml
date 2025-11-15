@@ -17,6 +17,7 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    command: ["mongod", "--quiet"]  # Reduce log verbosity
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -93,6 +94,7 @@ services:
       - ..:/code
     working_dir: /code/backend
     environment:
+      - PYTHONPATH=/code/backend
       - REDIS_URL=redis://redis:6379/0
       - MONGO_URL=mongodb://mongo:27017
       - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/chrysalis

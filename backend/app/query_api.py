@@ -11,7 +11,7 @@ from .query_executor import execute_mongodb_query, execute_count_query
 from .versioning import VersioningManager
 from .migration import route_query_to_schema_version
 from .security import validate_nl_query, sanitize_query, validate_source_id
-from .logging import get_logger, log_query_execution, log_error, log_security_event
+from .app_logging import get_logger, log_query_execution, log_error, log_security_event
 import redis
 import os
 import orjson

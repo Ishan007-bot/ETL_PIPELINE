@@ -92,7 +92,8 @@ class PostgreSQLManager:
                 values.append(row)
             
             # Insert
-            insert_query = f'INSERT INTO {table_name} ({", ".join([f\'"{col}"\' for col in columns])}) VALUES %s'
+            quoted_columns = [f'"{col}"' for col in columns]
+            insert_query = f'INSERT INTO {table_name} ({", ".join(quoted_columns)}) VALUES %s'
             execute_values(cursor, insert_query, values)
             self.conn.commit()
             cursor.close()
