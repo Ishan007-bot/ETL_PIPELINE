@@ -28,7 +28,22 @@ def process_job(raw_msg: bytes):
         return
     
     job_id = job.get("job_id")
-    docs = job.get("documents", [])
+    
+    # Handle both old format (documents) and new format (from file upload)
+    if "documents" in job:
+        # Old format: direct documents
+        docs = job.get("documents", [])
+        source_id = job.get("source", "unknown")
+    elif "extraction_result" in job:
+        # New format: from file upload
+        extraction_result = job.get("extraction_result", {})
+        docs = extraction_result.get("documents", [])
+        source_id = job.get("source_id", "unknown")
+        job["source"] = source_id  # Normalize for processing
+    else:
+        print(f"Job {job_id} has no documents or extraction_result")
+        send_to_dlq(job, reason="empty_documents")
+        return
     
     if not isinstance(docs, list) or len(docs) == 0:
         print(f"Job {job_id} has no documents")
@@ -62,14 +77,17 @@ def process_job(raw_msg: bytes):
             diff,
             job_id,
             sample[:5],
-            field_stats
+            field_stats,
+            source_id=source_id
         )
         schema_for_load = new_meta["schema"]
         version = new_meta["version"]
-        print("Created new schema version:", version)
+        schema_id = new_meta.get("schema_id", f"schema_v{version}")
+        print("Created new schema version:", version, "schema_id:", schema_id)
     else:
         schema_for_load = latest_schema_meta["schema"] if latest_schema_meta else candidate_schema
         version = latest_schema_meta["version"] if latest_schema_meta else 1
+        schema_id = latest_schema_meta.get("schema_id", f"schema_v{version}") if latest_schema_meta else "schema_v1"
     
     success_docs = []
     failed_docs = []

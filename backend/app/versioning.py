@@ -16,13 +16,15 @@ class VersioningManager:
         doc = SCHEMA_COLLECTION.find_one(sort=[("version", -1)])
         return doc
     
-    def create_new_version(self, schema, diff, cause_batch_id, sample_docs, field_stats=None):
+    def create_new_version(self, schema, diff, cause_batch_id, sample_docs, field_stats=None, source_id=None):
         latest = self.get_latest()
         new_version = 1 if not latest else latest["version"] + 1
         
         metadata = {
             "version": new_version,
             "schema": schema,
+            "schema_id": f"schema_v{new_version}",
+            "source_id": source_id,
             "diff": {
                 "added": getattr(diff, "added", {}),
                 "removed": getattr(diff, "removed", {}),
