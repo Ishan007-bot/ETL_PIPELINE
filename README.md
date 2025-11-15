@@ -44,6 +44,8 @@ docker compose -f infra/docker-compose.yml up --build
 This will start:
 - Redis on port 6379
 - MongoDB on port 27017
+- PostgreSQL on port 5432
+- Neo4j on ports 7474 (HTTP) and 7687 (Bolt)
 - FastAPI on port 8000
 - Worker (background processing)
 - Streamlit on port 8501
@@ -93,25 +95,82 @@ cd backend
 pytest ../tests/ -v
 ```
 
+## API Endpoints
+
+### File Upload
+- `POST /upload` - Upload .txt/.pdf/.md files with multipart/form-data
+  - Parameters: `file`, `source_id`, `metadata` (optional)
+  - Returns: `source_id`, `file_id`, `schema_id`, `parsed_fragments_summary`
+
+### Schema Management
+- `GET /schema?source_id=<id>` - Get current schema for source
+- `GET /schema/history?source_id=<id>` - Get schema version history with diffs
+
+### Query Execution
+- `POST /query` - Execute natural language or direct database queries
+  - Parameters: `source_id`, `nl_query` (optional), `db_query` (optional), `db_type`, `async_mode`
+- `GET /records?source_id=<id>&query_id=<id>` - Get query results
+
+### Migration
+- `POST /migrate?source_id=<id>&target_version=<v>&dry_run=true` - Trigger schema migration
+
+### Health & Legacy
+- `GET /health` - Health check
+- `POST /ingest` - Legacy JSON document ingestion (backward compatible)
+
 ## Acceptance Checklist
 
 ✅ **Infrastructure**
-- [x] `docker compose -f infra/docker-compose.yml up` starts Redis, Mongo, API, worker, and Streamlit
-- [x] Redis & Mongo show healthy status in logs
+- [x] `docker compose -f infra/docker-compose.yml up` starts all services (Redis, Mongo, PostgreSQL, Neo4j, API, worker, Streamlit)
+- [x] All services show healthy status in logs
 
-✅ **API**
-- [x] `POST /ingest` returns 202 and job lands in Redis queue
-- [x] Health endpoint `/health` returns status
+✅ **File Upload & Parsing**
+- [x] `POST /upload` accepts .txt, .pdf, .md files
+- [x] Multi-format extraction (JSON, HTML, CSV, key-value, raw text)
+- [x] Returns `parsed_fragments_summary` with fragment counts
 
-✅ **Worker**
-- [x] Worker processes job and writes schema entry to `schema_registry`
-- [x] Inserted docs appear in `raw_data` with `_schema_version`, `_ingest_job_id`, `_ingest_ts`
+✅ **Data Cleaning**
+- [x] Field name normalization (snake_case)
+- [x] Type detection and coercion
+- [x] Date format parsing
+- [x] Duplicate removal
+- [x] Data quality scoring
 
-✅ **Schema Versioning**
-- [x] Schema inference works with GenSON
-- [x] Schema diff detects added/removed/changed fields
-- [x] Drift decision creates new versions based on thresholds
-- [x] Version manager stores schemas in MongoDB `schema_registry` collection
+✅ **Schema Generation**
+- [x] Automatic schema inference with GenSON
+- [x] Enhanced metadata (confidence scores, primary keys, examples)
+- [x] Multi-DB compatibility (PostgreSQL, MongoDB, Neo4j)
+- [x] Schema versioning with diffs
+
+✅ **Schema Endpoints**
+- [x] `GET /schema` returns canonical schema format
+- [x] `GET /schema/history` returns version history with diffs
+
+✅ **Migration & Backward Compatibility**
+- [x] Migration plan generation
+- [x] Data transformation rules
+- [x] Backward compatibility checking
+- [x] Query routing to schema versions
+
+✅ **Query Execution**
+- [x] `POST /query` with natural language support (LLM integration)
+- [x] `POST /query` with direct database queries
+- [x] `GET /records` for async query results
+- [x] Multi-DB query execution (MongoDB, PostgreSQL, Neo4j)
+
+✅ **Multi-DB Support**
+- [x] PostgreSQL connection and operations
+- [x] Neo4j connection and operations
+- [x] Schema creation in all compatible databases
+- [x] Data insertion into multiple databases
+
+✅ **Security & Logging**
+- [x] Structured JSON logging
+- [x] File upload validation
+- [x] SQL injection prevention
+- [x] Input sanitization
+- [x] Security event logging
+- [x] Global exception handling
 
 ✅ **UI**
 - [x] Streamlit shows schema diffs and sample docs
@@ -121,10 +180,6 @@ pytest ../tests/ -v
 ✅ **DLQ**
 - [x] DLQ receives intentionally sent malformed docs
 - [x] Failed jobs are stored in Redis DLQ queue
-
-✅ **Demo**
-- [x] `backend/demo.sh` executes fixtures A/B/C
-- [x] Demo demonstrates version increments
 
 ✅ **Tests**
 - [x] `pytest` passes basic schema diff tests

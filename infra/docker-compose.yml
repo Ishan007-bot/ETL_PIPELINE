@@ -18,7 +18,39 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: chrysalis
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,10 +64,21 @@ services:
     volumes:
       - ..:/code
     working_dir: /code/backend
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MONGO_URL=mongodb://mongo:27017
+      - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/chrysalis
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
     depends_on:
       redis:
         condition: service_healthy
       mongo:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
     ports:
       - "8000:8000"
@@ -49,9 +92,18 @@ services:
     volumes:
       - ..:/code
     working_dir: /code/backend
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - MONGO_URL=mongodb://mongo:27017
+      - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/chrysalis
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password
     depends_on:
       - redis
       - mongo
+      - postgres
+      - neo4j
 
   streamlit:
     build:
@@ -62,11 +114,17 @@ services:
     volumes:
       - ..:/code
     working_dir: /code
+    environment:
+      - MONGO_URL=mongodb://mongo:27017
+      - REDIS_URL=redis://redis:6379/0
     ports:
       - "8501:8501"
     depends_on:
       - mongo
+      - redis
 
 volumes:
   mongo_data:
+  postgres_data:
+  neo4j_data:
 
