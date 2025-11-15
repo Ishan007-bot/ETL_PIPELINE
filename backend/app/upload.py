@@ -10,6 +10,10 @@ import os
 from datetime import datetime
 from .parsers import parse_file
 from .extractors import extract_all_fragments
+from .security import validate_file_upload, validate_source_id, secure_file_storage
+from .logging import get_logger, log_ingest, log_error, log_security_event
+
+logger = get_logger("chrysalis.upload")
 
 router = APIRouter()
 
@@ -32,37 +36,45 @@ async def upload_file(
     - source_id: string identifier for the source
     - metadata: optional JSON string with additional metadata
     """
-    # Validate file type
-    allowed_extensions = ['.txt', '.pdf', '.md']
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    
-    if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type. Allowed: {', '.join(allowed_extensions)}"
-        )
+    # Validate source_id
+    if not validate_source_id(source_id):
+        log_security_event(logger, "invalid_source_id", {"source_id": source_id})
+        raise HTTPException(status_code=400, detail="Invalid source_id format")
     
     # Read file content
     try:
         file_content = await file.read()
     except Exception as e:
+        log_error(logger, "file_read_error", f"Failed to read file: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Failed to read file: {str(e)}")
     
-    # Validate file size (e.g., max 100MB)
-    max_size = 100 * 1024 * 1024  # 100MB
-    if len(file_content) > max_size:
-        raise HTTPException(status_code=400, detail="File too large. Maximum size: 100MB")
+    # Security validation
+    validation = validate_file_upload(file_content, file.filename)
+    if not validation["valid"]:
+        log_security_event(logger, "file_validation_failed", {
+            "filename": file.filename,
+            "issues": validation["issues"]
+        })
+        raise HTTPException(
+            status_code=400,
+            detail=f"File validation failed: {', '.join(validation['issues'])}"
+        )
+    
+    # Secure file storage validation
+    storage_meta = secure_file_storage(file_content, file.filename)
     
     # Parse file
     try:
         parsed_file = parse_file(file_content, file.filename)
     except Exception as e:
+        log_error(logger, "file_parse_error", f"Failed to parse file: {str(e)}", {"filename": file.filename})
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
     
     # Extract fragments from content
     try:
         extraction_result = extract_all_fragments(parsed_file["content"])
     except Exception as e:
+        log_error(logger, "extraction_error", f"Failed to extract fragments: {str(e)}", {"filename": file.filename})
         raise HTTPException(status_code=500, detail=f"Failed to extract fragments: {str(e)}")
     
     # Generate IDs
@@ -95,7 +107,17 @@ async def upload_file(
     try:
         msg = orjson.dumps(payload)
         r.lpush(QUEUE_NAME, msg)
+        
+        # Log successful ingestion
+        log_ingest(
+            logger,
+            source_id,
+            file_id,
+            parsed_file["file_type"],
+            extraction_result["parsed_fragments_summary"]
+        )
     except Exception as e:
+        log_error(logger, "queue_error", f"Failed to queue job: {str(e)}", {"source_id": source_id, "file_id": file_id})
         raise HTTPException(status_code=500, detail=f"Failed to queue job: {str(e)}")
     
     # Return response matching evaluation guide format

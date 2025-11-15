@@ -4,8 +4,12 @@ Schema API endpoints for retrieving schemas and schema history.
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from .versioning import VersioningManager
+from .security import validate_source_id
+from .logging import get_logger, log_error, log_security_event
 from pymongo import MongoClient
 import os
+
+logger = get_logger("chrysalis.schema")
 
 router = APIRouter()
 
@@ -123,6 +127,11 @@ async def get_schema(source_id: str = Query(..., description="Source identifier"
     
     Returns schema metadata in canonical format matching evaluation guide.
     """
+    # Validate source_id
+    if not validate_source_id(source_id):
+        log_security_event(logger, "invalid_source_id", {"source_id": source_id})
+        raise HTTPException(status_code=400, detail="Invalid source_id format")
+    
     # Find latest schema for this source_id
     schema_doc = SCHEMA_COLLECTION.find_one(
         {"source_id": source_id},
@@ -151,6 +160,11 @@ async def get_schema_history(
     
     Returns list of all schema versions with change diffs.
     """
+    # Validate source_id
+    if not validate_source_id(source_id):
+        log_security_event(logger, "invalid_source_id", {"source_id": source_id})
+        raise HTTPException(status_code=400, detail="Invalid source_id format")
+    
     # Find all schemas for this source_id
     schemas = list(SCHEMA_COLLECTION.find(
         {"source_id": source_id}

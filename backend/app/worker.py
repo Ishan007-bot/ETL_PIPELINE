@@ -11,6 +11,7 @@ from .cleaning import clean_documents
 from .schema_metadata import enhance_schema_with_metadata, generate_db_compatibility_metadata
 from .migration import generate_migration_plan
 from .multidb import MultiDBManager
+from .logging import setup_logging, get_logger, log_schema_generation, log_schema_evolution, log_error
 from datetime import datetime
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -22,13 +23,16 @@ version_manager = VersioningManager()
 storage = StorageManager()
 multidb = MultiDBManager()
 
+# Setup logging
+logger = setup_logging(os.getenv("LOG_LEVEL", "INFO"))
+
 BLPOP_TIMEOUT = 5  # seconds
 
 def process_job(raw_msg: bytes):
     try:
         job = orjson.loads(raw_msg)
     except Exception as e:
-        print("Failed to parse job:", e)
+        log_error(logger, "job_parse_error", f"Failed to parse job: {str(e)}")
         send_to_dlq(raw_msg, reason="invalid_job_payload")
         return
     
@@ -51,11 +55,18 @@ def process_job(raw_msg: bytes):
         return
     
     if not isinstance(docs, list) or len(docs) == 0:
-        print(f"Job {job_id} has no documents")
+        log_error(logger, "empty_documents", f"Job {job_id} has no documents", {"job_id": job_id})
         send_to_dlq(job, reason="empty_documents")
         return
     
-    print(f"[{datetime.utcnow().isoformat()}] Processing job {job_id}, {len(docs)} docs")
+    logger.info(f"Processing job {job_id}, {len(docs)} docs", extra={
+        "extra_fields": {
+            "event_type": "job_processing",
+            "job_id": job_id,
+            "source_id": source_id,
+            "document_count": len(docs)
+        }
+    })
     
     # Data cleaning and canonicalization
     print(f"Cleaning {len(docs)} documents...")
@@ -68,15 +79,21 @@ def process_job(raw_msg: bytes):
     cleaned_docs = cleaning_result["cleaned_documents"]
     quality_metrics = cleaning_result["quality_metrics"]
     
-    print(f"Cleaned documents: {len(cleaned_docs)} (removed {quality_metrics.get('duplicates_removed', 0)} duplicates)")
-    print(f"Data quality score: {quality_metrics.get('quality_score', 0.0):.2f}")
+    logger.info(f"Cleaned documents: {len(cleaned_docs)} (removed {quality_metrics.get('duplicates_removed', 0)} duplicates)", extra={
+        "extra_fields": {
+            "event_type": "data_cleaning",
+            "job_id": job_id,
+            "cleaned_count": len(cleaned_docs),
+            "duplicates_removed": quality_metrics.get('duplicates_removed', 0),
+            "quality_score": quality_metrics.get('quality_score', 0.0)
+        }
+    })
     
     # sampling & preprocessing (use cleaned documents)
     sample = cleaned_docs[:200]
     candidate_schema, field_stats = infer_schema_from_sample(sample, return_stats=True)
     
     # Enhance schema with metadata
-    print("Enhancing schema with metadata...")
     enhanced_schema = enhance_schema_with_metadata(
         candidate_schema,
         field_stats,
@@ -86,7 +103,14 @@ def process_job(raw_msg: bytes):
     
     # Generate DB compatibility metadata
     db_compatibility = generate_db_compatibility_metadata(candidate_schema)
-    print(f"Schema compatible with: {', '.join(db_compatibility.get('compatible_dbs', []))}")
+    compatible_dbs_list = db_compatibility.get('compatible_dbs', [])
+    logger.info(f"Schema compatible with: {', '.join(compatible_dbs_list)}", extra={
+        "extra_fields": {
+            "event_type": "schema_metadata",
+            "source_id": source_id,
+            "compatible_dbs": compatible_dbs_list
+        }
+    })
     
     latest_schema_meta = version_manager.get_latest(source_id=source_id)
     
@@ -114,7 +138,13 @@ def process_job(raw_msg: bytes):
         )
         
         if migration_plan.get("data_loss_risk"):
-            print(f"WARNING: Migration has data loss risk. Warnings: {len(migration_plan.get('warnings', []))}")
+            logger.warning(f"Migration has data loss risk. Warnings: {len(migration_plan.get('warnings', []))}", extra={
+                "extra_fields": {
+                    "event_type": "migration_warning",
+                    "source_id": source_id,
+                    "warnings_count": len(migration_plan.get('warnings', []))
+                }
+            })
         
         new_meta = version_manager.create_new_version(
             candidate_schema,
@@ -143,7 +173,22 @@ def process_job(raw_msg: bytes):
             {"$set": {"migration_plan": migration_plan}}
         )
         
-        print("Created new schema version:", version, "schema_id:", schema_id)
+        log_schema_generation(
+            logger,
+            source_id,
+            schema_id,
+            version,
+            len(candidate_schema.get("properties", {}))
+        )
+        
+        if latest_schema_meta:
+            log_schema_evolution(
+                logger,
+                source_id,
+                latest_schema_meta.get("version", 1),
+                version,
+                diff.__dict__ if hasattr(diff, "__dict__") else {}
+            )
     else:
         schema_for_load = latest_schema_meta["schema"] if latest_schema_meta else candidate_schema
         version = latest_schema_meta["version"] if latest_schema_meta else 1
