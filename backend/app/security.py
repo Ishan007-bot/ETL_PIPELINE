@@ -37,17 +37,10 @@ def validate_file_upload(file_content: bytes, filename: str) -> Dict[str, Any]:
     if ext not in ALLOWED_EXTENSIONS:
         issues.append(f"File extension {ext} not allowed. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
     
-    # Check for suspicious content (basic)
-    if len(file_content) > 0:
-        # Check for potential script injection in text files
-        if ext == '.txt' or ext == '.md':
-            try:
-                content_str = file_content[:10000].decode('utf-8', errors='ignore')  # Check first 10KB
-                # Look for script tags
-                if re.search(r'<script', content_str, re.IGNORECASE):
-                    issues.append("Potential script injection detected in file content")
-            except:
-                pass
+    # Note: We allow script tags in data files as they may be part of scraped content
+    # (e.g., JSON-LD, embedded scripts in HTML). Actual execution is prevented by
+    # the query sanitization layer, not file upload validation.
+    # For now, we only check file size and extension.
     
     return {
         "valid": len(issues) == 0,

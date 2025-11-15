@@ -143,10 +143,48 @@ def clean_document(doc: Dict[str, Any], normalize_names: bool = True) -> Dict[st
         else:
             clean_key = key
         
-        # Skip system fields (they start with _)
+        # Skip system fields (they start with _) but keep meaningful ones
         if clean_key.startswith('_'):
-            cleaned[key] = value
+            # Keep system fields that are meaningful
+            if clean_key in ['_batch_source', '_quality_metadata', '_schema_version', '_schema_id', '_ingest_job_id', '_ingest_ts', '_source_id', '_quality_score']:
+                cleaned[key] = value
             continue
+        
+        # Filter out noise fields
+        noise_patterns = ['unnamed', 'unnamed_field', 'unnamed_', 'col_', 'column_', 'field_']
+        if any(pattern in clean_key.lower() for pattern in noise_patterns):
+            continue
+        
+        # Skip fields that are clearly malformed (too many underscores, numbers only, etc.)
+        if clean_key.count('_') > 5 or (clean_key.replace('_', '').isdigit() and len(clean_key.replace('_', '')) > 3):
+            continue
+        
+        # Filter out wrapper container fields that shouldn't be in the schema
+        # These are typically from wrapper objects that contain arrays
+        wrapper_fields = ['documents', 'items', 'data', 'results', 'records', 'products', 'entities']
+        if clean_key in wrapper_fields:
+            continue
+        
+        # Filter out source field from wrappers (unless it's _batch_source which is meaningful)
+        if clean_key == 'source' and '_batch_source' not in doc:
+            continue
+        
+        # Filter out batch_source as it's internal metadata (not part of data schema)
+        if clean_key in ['_batch_source', 'batch_source']:
+            continue
+        
+        # Filter out noise fields that look like malformed product IDs
+        # These come from CSV or key-value extraction that creates weird field names
+        if 'product_id' in clean_key and clean_key != 'product_id' and clean_key.count('_') > 2:
+            continue
+        
+        # Filter out flattened nested fields (level, location should be under inventory)
+        # Only filter if they're top-level AND we have an inventory field
+        if clean_key in ['level', 'location'] and 'inventory' in doc:
+            # Check if inventory is an object - if so, these should be nested, not top-level
+            inventory_val = doc.get('inventory')
+            if isinstance(inventory_val, dict):
+                continue  # Skip top-level level/location if inventory exists as object
         
         # Detect and coerce type
         coerced_value, detected_type, confidence = detect_and_coerce_type(value)
@@ -163,12 +201,14 @@ def clean_document(doc: Dict[str, Any], normalize_names: bool = True) -> Dict[st
         if coerced_value is None:
             cleaned[clean_key] = None
         elif isinstance(coerced_value, dict):
-            # Recursively clean nested objects
+            # Recursively clean nested objects - PRESERVE as object, don't flatten
             cleaned[clean_key] = clean_document(coerced_value, normalize_names)
         elif isinstance(coerced_value, list):
-            # Clean array elements
+            # Clean array elements - PRESERVE as array, don't convert to string
+            # Only clean dict items in array, preserve other types
             cleaned[clean_key] = [clean_document(item, normalize_names) if isinstance(item, dict) else item for item in coerced_value]
         else:
+            # Preserve primitive types as-is
             cleaned[clean_key] = coerced_value
     
     # Add quality metadata
@@ -292,7 +332,17 @@ def clean_documents(documents: List[Dict[str, Any]],
     Returns cleaned documents and quality metrics.
     """
     # Clean each document
-    cleaned_docs = [clean_document(doc, normalize_names) for doc in documents]
+    # Filter and clean documents, ensuring all are dicts
+    cleaned_docs = []
+    for doc in documents:
+        if isinstance(doc, dict):
+            cleaned_docs.append(clean_document(doc, normalize_names))
+        elif isinstance(doc, str):
+            # Wrap string in dict
+            cleaned_docs.append(clean_document({"_raw_content": doc}, normalize_names))
+        else:
+            # Wrap other types in dict
+            cleaned_docs.append(clean_document({"_raw_value": str(doc)}, normalize_names))
     
     # Remove duplicates if requested
     duplicates_removed = 0

@@ -62,9 +62,19 @@ def process_job(raw_msg: bytes):
             return
         
         if not isinstance(docs, list) or len(docs) == 0:
-            log_error(logger, "empty_documents", f"Job {job_id} has no documents", {"job_id": job_id})
-            send_to_dlq(job, reason="empty_documents")
-            return
+            # Instead of failing, create a minimal document from raw content
+            log_error(logger, "empty_documents", f"Job {job_id} has no documents, creating fallback", {"job_id": job_id})
+            # Try to extract from parsed_file or extraction_result
+            if "parsed_file" in job:
+                raw_content = job.get("parsed_file", {}).get("content", "")
+                if raw_content:
+                    docs = [{"_raw_content": str(raw_content)[:1000]}]
+                else:
+                    send_to_dlq(job, reason="empty_documents")
+                    return
+            else:
+                send_to_dlq(job, reason="empty_documents")
+                return
         
         logger.info(f"Processing job {job_id}, {len(docs)} docs", extra={
             "extra_fields": {
