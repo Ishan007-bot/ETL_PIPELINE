@@ -16,13 +16,14 @@ class VersioningManager:
         doc = SCHEMA_COLLECTION.find_one(sort=[("version", -1)])
         return doc
     
-    def create_new_version(self, schema, diff, cause_batch_id, sample_docs, field_stats=None, source_id=None):
+    def create_new_version(self, schema, diff, cause_batch_id, sample_docs, field_stats=None, source_id=None, enhanced_schema=None, db_compatibility=None):
         latest = self.get_latest()
         new_version = 1 if not latest else latest["version"] + 1
         
         metadata = {
             "version": new_version,
             "schema": schema,
+            "enhanced_schema": enhanced_schema or schema,
             "schema_id": f"schema_v{new_version}",
             "source_id": source_id,
             "diff": {
@@ -31,9 +32,11 @@ class VersioningManager:
                 "changed": getattr(diff, "changed", {})
             },
             "created_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.utcnow().isoformat(),
             "cause_batch_id": cause_batch_id,
             "sample_docs": sample_docs,
-            "field_stats": field_stats or {}
+            "field_stats": field_stats or {},
+            "db_compatibility": db_compatibility or {}
         }
         
         SCHEMA_COLLECTION.insert_one(metadata)

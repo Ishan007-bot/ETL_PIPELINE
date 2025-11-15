@@ -8,6 +8,7 @@ from .versioning import VersioningManager
 from .storage import StorageManager
 from .dlq import send_to_dlq
 from .cleaning import clean_documents
+from .schema_metadata import enhance_schema_with_metadata, generate_db_compatibility_metadata
 from datetime import datetime
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -71,6 +72,19 @@ def process_job(raw_msg: bytes):
     sample = cleaned_docs[:200]
     candidate_schema, field_stats = infer_schema_from_sample(sample, return_stats=True)
     
+    # Enhance schema with metadata
+    print("Enhancing schema with metadata...")
+    enhanced_schema = enhance_schema_with_metadata(
+        candidate_schema,
+        field_stats,
+        sample[:10],  # Use more samples for examples
+        source_offsets=None  # TODO: track source offsets from extraction
+    )
+    
+    # Generate DB compatibility metadata
+    db_compatibility = generate_db_compatibility_metadata(candidate_schema)
+    print(f"Schema compatible with: {', '.join(db_compatibility.get('compatible_dbs', []))}")
+    
     latest_schema_meta = version_manager.get_latest()
     
     diff = compute_schema_diff(
@@ -93,7 +107,9 @@ def process_job(raw_msg: bytes):
             job_id,
             sample[:5],
             field_stats,
-            source_id=source_id
+            source_id=source_id,
+            enhanced_schema=enhanced_schema,
+            db_compatibility=db_compatibility
         )
         schema_for_load = new_meta["schema"]
         version = new_meta["version"]
