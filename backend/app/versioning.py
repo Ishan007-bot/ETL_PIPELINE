@@ -11,9 +11,16 @@ SCHEMA_COLLECTION = db["schema_registry"]
 class VersioningManager:
     def __init__(self):
         SCHEMA_COLLECTION.create_index([("version", pymongo.DESCENDING)], unique=False)
+        SCHEMA_COLLECTION.create_index([("source_id", pymongo.ASCENDING), ("version", pymongo.DESCENDING)], unique=False)
     
-    def get_latest(self):
-        doc = SCHEMA_COLLECTION.find_one(sort=[("version", -1)])
+    def get_latest(self, source_id=None):
+        if source_id:
+            doc = SCHEMA_COLLECTION.find_one(
+                {"source_id": source_id},
+                sort=[("version", -1)]
+            )
+        else:
+            doc = SCHEMA_COLLECTION.find_one(sort=[("version", -1)])
         return doc
     
     def create_new_version(self, schema, diff, cause_batch_id, sample_docs, field_stats=None, source_id=None, enhanced_schema=None, db_compatibility=None):

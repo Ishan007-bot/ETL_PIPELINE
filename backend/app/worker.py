@@ -85,7 +85,7 @@ def process_job(raw_msg: bytes):
     db_compatibility = generate_db_compatibility_metadata(candidate_schema)
     print(f"Schema compatible with: {', '.join(db_compatibility.get('compatible_dbs', []))}")
     
-    latest_schema_meta = version_manager.get_latest()
+    latest_schema_meta = version_manager.get_latest(source_id=source_id)
     
     diff = compute_schema_diff(
         latest_schema_meta.get("schema") if latest_schema_meta else None,
