@@ -22,7 +22,16 @@ def extract_json_fragments(text: str) -> List[Dict[str, Any]]:
         # Find JSON objects
         for match in re.finditer(json_object_pattern, text, re.DOTALL):
             try:
-                parsed = json.loads(match.group())
+                json_str = match.group()
+                # Strip single-line comments (// ...) from JSON before parsing
+                # This handles JSON with comments that are common in scraped data
+                json_str_cleaned = re.sub(r'//.*?$', '', json_str, flags=re.MULTILINE)
+                # Also strip multi-line comments (/* ... */)
+                json_str_cleaned = re.sub(r'/\*.*?\*/', '', json_str_cleaned, flags=re.DOTALL)
+                # Remove trailing commas before closing braces/brackets (invalid JSON but common in scraped data)
+                json_str_cleaned = re.sub(r',\s*}', '}', json_str_cleaned)
+                json_str_cleaned = re.sub(r',\s*]', ']', json_str_cleaned)
+                parsed = json.loads(json_str_cleaned)
                 fragments.append({
                     "type": "json_object",
                     "content": parsed,
@@ -256,8 +265,15 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
         extracted_from_nested = False  # Track if we extracted from nested arrays
         
         # First pass: Check if we have structured JSON with nested arrays
+        # OR product-like JSON objects (standalone records with common product fields)
         # If so, we'll ONLY extract from those and skip all other sources
         has_structured_json = False
+        has_product_like_json = False
+        product_like_count = 0
+        
+        # Common product/entity field patterns that indicate structured data
+        product_like_fields = ["product_id", "id", "name", "title", "price", "base_price", "status", "sku"]
+        
         for frag in json_frags:
             content = frag.get("content")
             if isinstance(content, dict):
@@ -267,13 +283,23 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                     has_structured_json = True
                     extracted_from_nested = True
                     break
+                # Check if this is a product-like JSON object (standalone record)
+                # Count how many product-like fields it has
+                product_field_count = sum(1 for field in product_like_fields if field in content)
+                # If it has at least 2 product-like fields, consider it a product record
+                if product_field_count >= 2:
+                    has_product_like_json = True
+                    product_like_count += 1
         
         # Add JSON fragments as documents
-        # If we have structured JSON, ONLY extract from nested arrays, skip everything else
+        # PRIORITY: If we have structured JSON or product-like JSON, ONLY extract those
         for frag in json_frags:
             try:
                 content = frag["content"]
                 if isinstance(content, list):
+                    # If we have product-like JSON detected, skip arrays (they're likely noise)
+                    if has_product_like_json:
+                        continue
                     # Ensure all items in list are dicts
                     for item in content:
                         if isinstance(item, dict):
@@ -305,8 +331,24 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                                         extracted_nested = True
                                         extracted_from_nested = True  # Mark that we extracted from nested
                         # NEVER add wrapper objects when we have structured JSON
+                    elif has_product_like_json:
+                        # If we detected product-like JSON, ONLY add product-like objects
+                        # Count product-like fields
+                        product_field_count = sum(1 for field in product_like_fields if field in content)
+                        
+                        # Check if this is a product-like object (has at least 2 product fields)
+                        if product_field_count >= 2:
+                            # Filter out wrapper objects
+                            array_fields = [k for k, v in content.items() if isinstance(v, list)]
+                            total_fields = len(content)
+                            is_wrapper = len(array_fields) > 0 and total_fields <= 2
+                            has_wrapper_field = any(field in content for field in nested_array_fields)
+                            
+                            if not is_wrapper and not has_wrapper_field:
+                                documents.append(content)
+                        # Skip all non-product-like JSON objects
                     else:
-                        # No structured JSON found, process normally but still check for nested arrays
+                        # No structured JSON or product-like JSON found, process normally but still check for nested arrays
                         for field_name in nested_array_fields:
                             if field_name in content and isinstance(content[field_name], list):
                                 # Extract items from nested array
@@ -330,13 +372,16 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                             if not is_wrapper and not has_wrapper_field:
                                 documents.append(content)
                 elif isinstance(content, str):
+                    # If we have product-like JSON, skip string content (noise)
+                    if has_product_like_json:
+                        continue
                     # Convert string to dict
                     documents.append({"_raw_content": content})
             except Exception:
                 continue
         
-        # Add HTML table rows as documents (only if we didn't extract from nested JSON)
-        if not extracted_from_nested:
+        # Add HTML table rows as documents (only if we didn't extract from nested JSON or product-like JSON)
+        if not extracted_from_nested and not has_product_like_json:
             for table in html_tables:
                 try:
                     for row in table["content"]:
@@ -347,9 +392,9 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                 except Exception:
                     continue
         
-        # Add CSV rows as documents (only if we didn't extract from nested JSON arrays)
+        # Add CSV rows as documents (only if we didn't extract from nested JSON arrays or product-like JSON)
         # Skip CSV/key-value to avoid noise when we have structured JSON data
-        if not extracted_from_nested:
+        if not extracted_from_nested and not has_product_like_json:
             # Only add CSV if we don't have structured JSON
             for csv_section in csv_sections:
                 try:
@@ -361,16 +406,16 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                 except Exception:
                     continue
         
-        # Add key-value pairs as documents (only if we didn't extract from nested JSON arrays)
-        if not extracted_from_nested:
+        # Add key-value pairs as documents (only if we didn't extract from nested JSON arrays or product-like JSON)
+        if not extracted_from_nested and not has_product_like_json:
             for kv in kv_pairs:
                 try:
                     documents.append({kv["key"]: kv["value"]})
                 except Exception:
                     continue
         
-        # Add text segments as documents (only if we didn't extract from nested JSON)
-        if not extracted_from_nested:
+        # Add text segments as documents (only if we didn't extract from nested JSON or product-like JSON)
+        if not extracted_from_nested and not has_product_like_json:
             for seg in text_segments:
                 try:
                     documents.append({

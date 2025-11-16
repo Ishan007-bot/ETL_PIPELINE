@@ -155,6 +155,22 @@ def clean_document(doc: Dict[str, Any], normalize_names: bool = True) -> Dict[st
         if any(pattern in clean_key.lower() for pattern in noise_patterns):
             continue
         
+        # Filter out single-letter fields and very short fields (likely noise from text extraction)
+        # But keep meaningful short fields like 'id', 'sku'
+        meaningful_short_fields = ['id', 'sku', 'url', 'key']
+        if len(clean_key) <= 1 and clean_key not in meaningful_short_fields:
+            continue
+        if len(clean_key) == 2 and clean_key not in meaningful_short_fields and clean_key not in ['_a', '_b']:
+            # Filter out fields like 'a', 'b', 'c' etc unless they're meaningful
+            if clean_key in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']:
+                continue
+        
+        # Filter out fields that look like they came from text parsing noise
+        # e.g., 'below', 'from', 'class', 'comments', 'contact', 'description', 'title' when they're from HTML/CSV
+        text_noise_fields = ['below', 'from', 'class', 'comments', 'contact', 'description', 'title', 'i_d', 'z_o_n_e']
+        # Only filter these if they have very low confidence (appear in < 5% of documents)
+        # This will be handled by schema inference filtering low-confidence fields
+        
         # Skip fields that are clearly malformed (too many underscores, numbers only, etc.)
         if clean_key.count('_') > 5 or (clean_key.replace('_', '').isdigit() and len(clean_key.replace('_', '')) > 3):
             continue
