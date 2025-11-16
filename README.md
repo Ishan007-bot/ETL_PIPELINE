@@ -15,11 +15,63 @@ A production-ready dynamic ETL system that automatically ingests unstructured da
 
 ## 🏗️ Architecture
 
+### System Components
+
 ```
-Client → FastAPI (Port 8000) → Redis Queue → Worker → MongoDB/PostgreSQL/Neo4j
-                                                      ↓
-                                                 Streamlit UI (Port 8501)
+┌─────────────┐
+│   Client    │
+└──────┬──────┘
+       │ POST /upload
+       ▼
+┌─────────────────┐
+│  FastAPI API    │  Port 8000
+│  - File Upload  │
+│  - Schema API   │
+│  - Query API    │
+└──────┬──────────┘
+       │ Queue Job
+       ▼
+┌─────────────────┐
+│  Redis Queue    │  Port 6379
+│  - Job Queue    │
+│  - DLQ          │
+└──────┬──────────┘
+       │ Worker Consumes
+       ▼
+┌─────────────────┐
+│  Worker Process │
+│  - Parse        │
+│  - Extract      │
+│  - Clean        │
+│  - Infer Schema │
+│  - Version      │
+└──────┬──────────┘
+       │ Store Data & Schema
+       ▼
+┌─────────────────────────┐
+│   MongoDB (Primary)      │  Port 27017
+│   PostgreSQL             │  Port 5432
+│   Neo4j                  │  Ports 7474, 7687
+└─────────────────────────┘
+       │
+       ▼
+┌─────────────────┐
+│  Streamlit UI   │  Port 8501
+│  - Schema View  │
+│  - Data View    │
+│  - DLQ Monitor  │
+└─────────────────┘
 ```
+
+### Component Responsibilities
+
+- **FastAPI API**: Handles file uploads, schema retrieval, query execution
+- **Redis**: Job queue for async processing, DLQ for failed jobs
+- **Worker**: Background ETL processing (parsing, extraction, cleaning, schema inference)
+- **MongoDB**: Primary document store (flexible, schema-less)
+- **PostgreSQL**: Relational store (SQL queries, ACID compliance)
+- **Neo4j**: Graph database (relationships, graph queries)
+- **Streamlit**: Demo UI for visualization and monitoring
 
 ## 🚀 Quick Start
 
