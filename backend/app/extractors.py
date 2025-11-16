@@ -266,7 +266,7 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
         
         # First pass: Check if we have structured JSON with nested arrays
         # OR product-like JSON objects (standalone records with common product fields)
-        # If so, we'll ONLY extract from those and skip all other sources
+        # This helps prioritize structured data, but we still extract from all sources
         has_structured_json = False
         has_product_like_json = False
         product_like_count = 0
@@ -292,15 +292,12 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                     product_like_count += 1
         
         # Add JSON fragments as documents
-        # PRIORITY: If we have structured JSON or product-like JSON, ONLY extract those
+        # Extract from all sources - cleaning stage will filter noise and prioritize structured data
         for frag in json_frags:
             try:
                 content = frag["content"]
                 if isinstance(content, list):
-                    # If we have product-like JSON detected, skip arrays (they're likely noise)
-                    if has_product_like_json:
-                        continue
-                    # Ensure all items in list are dicts
+                    # Extract all arrays - cleaning stage will filter noise
                     for item in content:
                         if isinstance(item, dict):
                             documents.append(item)
@@ -332,8 +329,8 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                                         extracted_from_nested = True  # Mark that we extracted from nested
                         # NEVER add wrapper objects when we have structured JSON
                     elif has_product_like_json:
-                        # If we detected product-like JSON, ONLY add product-like objects
-                        # Count product-like fields
+                        # If we detected product-like JSON, prioritize product-like objects
+                        # But still extract other JSON - cleaning will filter noise
                         product_field_count = sum(1 for field in product_like_fields if field in content)
                         
                         # Check if this is a product-like object (has at least 2 product fields)
@@ -346,7 +343,15 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                             
                             if not is_wrapper and not has_wrapper_field:
                                 documents.append(content)
-                        # Skip all non-product-like JSON objects
+                        else:
+                            # Also extract non-product-like JSON - cleaning will filter if it's noise
+                            array_fields = [k for k, v in content.items() if isinstance(v, list)]
+                            total_fields = len(content)
+                            is_wrapper = len(array_fields) > 0 and total_fields <= 2
+                            has_wrapper_field = any(field in content for field in nested_array_fields)
+                            
+                            if not is_wrapper and not has_wrapper_field:
+                                documents.append(content)
                     else:
                         # No structured JSON or product-like JSON found, process normally but still check for nested arrays
                         for field_name in nested_array_fields:
@@ -372,16 +377,14 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                             if not is_wrapper and not has_wrapper_field:
                                 documents.append(content)
                 elif isinstance(content, str):
-                    # If we have product-like JSON, skip string content (noise)
-                    if has_product_like_json:
-                        continue
-                    # Convert string to dict
+                    # Extract string content - cleaning stage will filter noise
                     documents.append({"_raw_content": content})
             except Exception:
                 continue
         
-        # Add HTML table rows as documents (only if we didn't extract from nested JSON or product-like JSON)
-        if not extracted_from_nested and not has_product_like_json:
+        # Add HTML table rows as documents
+        # Extract from all sources - cleaning stage will filter noise
+        if not extracted_from_nested:
             for table in html_tables:
                 try:
                     for row in table["content"]:
@@ -392,10 +395,9 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                 except Exception:
                     continue
         
-        # Add CSV rows as documents (only if we didn't extract from nested JSON arrays or product-like JSON)
-        # Skip CSV/key-value to avoid noise when we have structured JSON data
-        if not extracted_from_nested and not has_product_like_json:
-            # Only add CSV if we don't have structured JSON
+        # Add CSV rows as documents
+        # Extract from all sources - cleaning stage will filter noise
+        if not extracted_from_nested:
             for csv_section in csv_sections:
                 try:
                     for row in csv_section["content"]:
@@ -406,8 +408,9 @@ def extract_all_fragments(text: str) -> Dict[str, Any]:
                 except Exception:
                     continue
         
-        # Add key-value pairs as documents (only if we didn't extract from nested JSON arrays or product-like JSON)
-        if not extracted_from_nested and not has_product_like_json:
+        # Add key-value pairs as documents
+        # Extract from all sources - cleaning stage will filter noise
+        if not extracted_from_nested:
             for kv in kv_pairs:
                 try:
                     documents.append({kv["key"]: kv["value"]})
