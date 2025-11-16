@@ -1,186 +1,153 @@
-# Chrysalis - Dynamic ETL with Schema Versioning
+# Chrysalis - Dynamic ETL Pipeline with Intelligent Schema Evolution
 
-A dynamic ETL system that automatically detects schema drift and creates versioned schemas.
+A production-ready dynamic ETL system that automatically ingests unstructured data, infers schemas, detects schema drift, and creates versioned schemas. Handles mixed-format data (JSON, HTML, CSV, key-value pairs) with intelligent extraction prioritization.
 
-## Project Structure
+## 🎯 Key Features
+
+- **Zero-Schema Ingestion**: Store data without knowing structure upfront
+- **Intelligent Multi-Format Extraction**: JSON, HTML, CSV, key-value pairs, raw text
+- **Smart Extraction Prioritization**: Detects structured data and prioritizes it over noise
+- **Automatic Schema Inference**: Generates JSON schemas using GenSON
+- **Schema Evolution Tracking**: Automatic drift detection and versioning
+- **Multi-Database Support**: MongoDB, PostgreSQL, Neo4j
+- **Natural Language Querying**: LLM-powered query translation
+- **Production-Ready**: Error handling, logging, security, DLQ
+
+## 🏗️ Architecture
 
 ```
-chrysalis/
-├─ backend/
-│  ├─ app/
-│  ├─ requirements.txt
-│  └─ demo.sh
-├─ demo/
-│  └─ streamlit_app.py
-├─ infra/
-│  └─ docker-compose.yml
-├─ fixtures/
-├─ tests/
-└─ README.md
+Client → FastAPI (Port 8000) → Redis Queue → Worker → MongoDB/PostgreSQL/Neo4j
+                                                      ↓
+                                                 Streamlit UI (Port 8501)
 ```
 
-## Setup
+## 🚀 Quick Start
 
-1. Create virtual environment:
+### Using Docker Compose
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+cd infra
+docker compose up -d --build
 ```
 
-2. Install dependencies:
-```bash
-pip install -r backend/requirements.txt
-```
-
-## Running the Application
-
-### Using Docker Compose (Recommended)
-
-1. Start all services:
-```bash
-docker compose -f infra/docker-compose.yml up --build
-```
-
-This will start:
-- Redis on port 6379
-- MongoDB on port 27017
-- PostgreSQL on port 5432
-- Neo4j on ports 7474 (HTTP) and 7687 (Bolt)
-- FastAPI on port 8000
-- Worker (background processing)
-- Streamlit on port 8501
-
-2. Run the demo script:
-```bash
-cd backend
-bash demo.sh
-# Or on Windows with Git Bash: bash demo.sh
-```
-
-3. View results:
+**Services**:
+- FastAPI: http://localhost:8000
 - Streamlit UI: http://localhost:8501
-- API docs: http://localhost:8000/docs
+- API Docs: http://localhost:8000/docs
 
-### Running Locally (Without Docker)
-
-1. Start Redis and MongoDB locally
-2. Set environment variables:
+**Test Upload**:
 ```bash
-export REDIS_URL=redis://localhost:6379/0
-export MONGO_URL=mongodb://localhost:27017
+curl -X POST "http://localhost:8000/upload" \
+  -F "file=@test_data.txt" \
+  -F "source_id=test_001"
 ```
 
-3. Start API:
-```bash
-cd backend
-uvicorn app.main:app --reload --port 8000
-```
-
-4. Start worker (in separate terminal):
-```bash
-cd backend
-python app/worker.py
-```
-
-5. Start Streamlit (in separate terminal):
-```bash
-streamlit run demo/streamlit_app.py
-```
-
-## Testing
-
-Run tests:
-```bash
-cd backend
-pytest ../tests/ -v
-```
-
-## API Endpoints
+## 📡 API Endpoints
 
 ### File Upload
-- `POST /upload` - Upload .txt/.pdf/.md files with multipart/form-data
+- **`POST /upload`** - Upload .txt/.pdf/.md files
   - Parameters: `file`, `source_id`, `metadata` (optional)
-  - Returns: `source_id`, `file_id`, `schema_id`, `parsed_fragments_summary`
+  - Returns: `source_id`, `file_id`, `parsed_fragments_summary`
 
 ### Schema Management
-- `GET /schema?source_id=<id>` - Get current schema for source
-- `GET /schema/history?source_id=<id>` - Get schema version history with diffs
+- **`GET /schema?source_id=<id>`** - Get current schema
+- **`GET /schema/history?source_id=<id>`** - Get schema version history
 
 ### Query Execution
-- `POST /query` - Execute natural language or direct database queries
-  - Parameters: `source_id`, `nl_query` (optional), `db_query` (optional), `db_type`, `async_mode`
-- `GET /records?source_id=<id>&query_id=<id>` - Get query results
+- **`POST /query`** - Execute natural language or direct database queries
+  - Parameters: `source_id`, `nl_query` (optional), `db_query` (optional), `db_type`
+- **`GET /records?query_id=<id>`** - Get async query results
 
-### Migration
-- `POST /migrate?source_id=<id>&target_version=<v>&dry_run=true` - Trigger schema migration
+### Health
+- **`GET /health`** - Health check
 
-### Health & Legacy
-- `GET /health` - Health check
-- `POST /ingest` - Legacy JSON document ingestion (backward compatible)
+## 🔄 Data Flow
 
-## Acceptance Checklist
+1. Upload file → Parse → Extract (JSON/HTML/CSV/KV)
+2. Queue job → Worker processes
+3. Clean data → Infer schema → Detect drift
+4. Store in MongoDB/PostgreSQL/Neo4j
+5. Query with natural language or direct queries
 
-✅ **Infrastructure**
-- [x] `docker compose -f infra/docker-compose.yml up` starts all services (Redis, Mongo, PostgreSQL, Neo4j, API, worker, Streamlit)
-- [x] All services show healthy status in logs
+## 🧠 Intelligent Features
 
-✅ **File Upload & Parsing**
-- [x] `POST /upload` accepts .txt, .pdf, .md files
-- [x] Multi-format extraction (JSON, HTML, CSV, key-value, raw text)
-- [x] Returns `parsed_fragments_summary` with fragment counts
+- **Product-Like JSON Detection**: Automatically prioritizes structured JSON over CSV/HTML noise
+- **Type Preservation**: Maintains nested objects and arrays (no flattening)
+- **Noise Filtering**: Removes single-letter fields, malformed names, wrapper fields
+- **JSON Comment Handling**: Parses JSON with comments and trailing commas
+- **Error Resilience**: Never crashes, DLQ for failed jobs, always returns valid responses
 
-✅ **Data Cleaning**
-- [x] Field name normalization (snake_case)
-- [x] Type detection and coercion
-- [x] Date format parsing
-- [x] Duplicate removal
-- [x] Data quality scoring
+## 🛠️ Technology Stack
 
-✅ **Schema Generation**
-- [x] Automatic schema inference with GenSON
-- [x] Enhanced metadata (confidence scores, primary keys, examples)
-- [x] Multi-DB compatibility (PostgreSQL, MongoDB, Neo4j)
-- [x] Schema versioning with diffs
+- **Backend**: FastAPI, GenSON, BeautifulSoup4, Pandas, PyPDF2, OpenAI API
+- **Databases**: MongoDB, PostgreSQL, Neo4j
+- **Infrastructure**: Redis, Docker Compose, Streamlit
 
-✅ **Schema Endpoints**
-- [x] `GET /schema` returns canonical schema format
-- [x] `GET /schema/history` returns version history with diffs
+## 📊 Example Schema Response
 
-✅ **Migration & Backward Compatibility**
-- [x] Migration plan generation
-- [x] Data transformation rules
-- [x] Backward compatibility checking
-- [x] Query routing to schema versions
+```json
+{
+  "schema_id": "schema_v3",
+  "version": 3,
+  "compatible_dbs": ["postgresql", "mongodb", "neo4j"],
+  "fields": [
+    {
+      "name": "product_id",
+      "type": ["integer", "string"],
+      "example": 9001
+    },
+    {
+      "name": "tags",
+      "type": "array",
+      "example": ["sensor", "wireless"]
+    }
+  ],
+  "primary_key_candidates": ["product_id"]
+}
+```
 
-✅ **Query Execution**
-- [x] `POST /query` with natural language support (LLM integration)
-- [x] `POST /query` with direct database queries
-- [x] `GET /records` for async query results
-- [x] Multi-DB query execution (MongoDB, PostgreSQL, Neo4j)
+## 📈 Schema Evolution
 
-✅ **Multi-DB Support**
-- [x] PostgreSQL connection and operations
-- [x] Neo4j connection and operations
-- [x] Schema creation in all compatible databases
-- [x] Data insertion into multiple databases
+The system automatically detects schema changes:
+- **v1**: `product_id` (integer), `name` (string), `price` (number)
+- **v2**: Added `status` field → New version created
+- **v3**: `price` changes to `["number", "string"]` → New version with type union
 
-✅ **Security & Logging**
-- [x] Structured JSON logging
-- [x] File upload validation
-- [x] SQL injection prevention
-- [x] Input sanitization
-- [x] Security event logging
-- [x] Global exception handling
+View history: `GET /schema/history?source_id=<id>`
 
-✅ **UI**
-- [x] Streamlit shows schema diffs and sample docs
-- [x] Streamlit displays ingested documents
-- [x] DLQ entries visible in Streamlit sidebar
+## 🔒 Security
 
-✅ **DLQ**
-- [x] DLQ receives intentionally sent malformed docs
-- [x] Failed jobs are stored in Redis DLQ queue
+- File upload validation (size, type, content)
+- SQL injection prevention
+- Input sanitization
+- Structured security event logging
 
-✅ **Tests**
-- [x] `pytest` passes basic schema diff tests
+## 📚 Documentation
 
+- **Setup Guide**: `SETUP_GUIDE.md`
+- **Interview Guide**: `INTERVIEW_GUIDE.md` (complete system explanation)
+- **API Docs**: http://localhost:8000/docs
+
+## 🧪 Testing
+
+```bash
+# Upload test file
+curl -X POST "http://localhost:8000/upload" \
+  -F "file=@test_data.txt" \
+  -F "source_id=test_001"
+
+# Get schema
+curl "http://localhost:8000/schema?source_id=test_001"
+```
+
+## 🎯 Use Cases
+
+- Web scraping with unknown structure
+- API integration with changing schemas
+- Data lakes (store first, infer schema later)
+- ETL pipelines with automatic schema evolution
+- Multi-source data aggregation
+
+---
+
+**Built for dynamic ETL pipeline evaluation** 🚀
